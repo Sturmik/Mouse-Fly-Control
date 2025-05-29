@@ -24,6 +24,27 @@ AFlyingPawn::AFlyingPawn()
 	Camera->SetupAttachment(SpringArm);
 }
 
+FVector AFlyingPawn::GetTargetAimWorldLocation() const
+{
+	// Could be calculated from mouse hit on world plane
+	return DesiredDirection;
+}
+
+FVector AFlyingPawn::GetCurrentDirection() const
+{
+	return MeshComponent->GetForwardVector();
+}
+
+FRotator AFlyingPawn::GetCurrentRotation() const
+{
+	return MeshComponent->GetComponentRotation();
+}
+
+void AFlyingPawn::SetDesiredDirection(FVector WorldDirection)
+{
+	DesiredDirection = WorldDirection;
+}
+
 void AFlyingPawn::BeginPlay()
 {
 	Super::BeginPlay();
@@ -39,6 +60,11 @@ void AFlyingPawn::Tick(float DeltaTime)
 	CameraPitch = FMath::Clamp(CameraPitch, -89.9f, 89.9f);
 	FRotator NewRotation(CameraPitch, CameraYaw, 0.0f);
 	SpringArm->SetWorldRotation(NewRotation);
+
+	// Direction of mesh component
+	FVector Start = MeshComponent->GetComponentLocation();
+	FVector End = Start + MeshComponent->GetForwardVector() * 1000.0f;
+	DrawDebugLine(GetWorld(), Start, End, FColor::Cyan, false, 0.1f, 0, 2.0f);
 }
 
 void AFlyingPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
