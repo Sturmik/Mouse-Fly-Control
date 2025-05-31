@@ -38,13 +38,26 @@ private:
 	float CameraYaw;
 	float CameraPitch;
 
-	// Sensitivity
+	FVector DesiredDirection;
+
+	UPROPERTY(EditAnywhere)
+	float ThrustForce = 5000.0f;
+
+	UPROPERTY(EditAnywhere)
+	FVector TurnTorque = FVector(45.f, 25.f, 45.f);
+
 	UPROPERTY(EditAnywhere)
 	float MouseSensitivity = 1.0f;
 
-	FVector DesiredDirection;
+	UPROPERTY(EditAnywhere)
+	float TurnAngleSensitivity = 1.0f;
+
+	UPROPERTY(EditAnywhere)
+	float AggressiveTurnAngle = 10.0f;
 
 	// Mouse input handlers
 	void LookUp(float Value);
 	void Turn(float Value);
+
+	void RunAutopilot(const FVector& FlyTarget, float& OutYaw, float& OutPitch, float& OutRoll);
 };
