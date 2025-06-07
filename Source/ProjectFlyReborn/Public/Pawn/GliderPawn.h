@@ -1,0 +1,84 @@
+#pragma once
+
+#include "ProjectFlyReborn/Public/Interface/FlightMouseAimInterface.h"
+#include "CoreMinimal.h"
+#include "GameFramework/Pawn.h"
+#include "GliderPawn.generated.h"
+
+UCLASS()
+class PROJECTFLYREBORN_API AGliderPawn : public APawn, public IFlightMouseAimInterface
+{
+	GENERATED_BODY()
+
+public:
+	AGliderPawn();
+
+	virtual FVector GetTargetAimWorldLocation() const override;
+	virtual FVector GetCurrentDirection() const override;
+	virtual FRotator GetCurrentRotation() const override;
+	virtual void SetDesiredDirection(FVector WorldDirection) override;
+
+	virtual void Tick(float DeltaTime) override;
+
+protected:
+	virtual void BeginPlay() override;
+	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+
+private:
+	UPROPERTY(EditAnywhere)
+	class UStaticMeshComponent* MeshComponent;
+
+	UPROPERTY(EditAnywhere)
+	class USpringArmComponent* SpringArm;
+
+	UPROPERTY(EditAnywhere)
+	class UCameraComponent* Camera;
+
+	// Input variables
+	float CameraYaw;
+	float CameraPitch;
+
+	FVector DesiredDirection;
+
+	UPROPERTY(EditAnywhere)
+	float InitialThrustForce = 5000.0f;
+
+	UPROPERTY(EditAnywhere)
+	float ThrustForce = 5000.0f;
+
+	UPROPERTY(EditAnywhere, meta = (ClampMin = 0.0f))
+	float MinimumThrustForce = 0.0f;
+
+	UPROPERTY(EditAnywhere, meta = (ClampMin = 0.0f))
+	float MaximumThrustForce = 5000.0f;
+
+	UPROPERTY(EditAnywhere)
+	FVector TurnTorque = FVector(45.f, 25.f, 45.f);
+
+	UPROPERTY(EditAnywhere)
+	float MouseSensitivity = 1.0f;
+
+	UPROPERTY(EditAnywhere)
+	float TurnAngleSensitivity = 1.0f;
+
+	UPROPERTY(EditAnywhere)
+	float AggressiveTurnAngle = 10.0f;
+
+	UPROPERTY(EditAnywhere)
+	float LiftScalar = 0.001f;
+
+	UPROPERTY(EditAnywhere)
+	float GravityForce = 980.0f;
+
+	UPROPERTY(EditAnywhere, meta = (ClampMin = 0.0f))
+	float DiveSpeedIncreaseScalar = 4.0f;
+
+	UPROPERTY(EditAnywhere, meta = (ClampMin = 0.0f))
+	float RiseSpeedDecreaseScalar = 6.0f;
+
+	// Mouse input handlers
+	void LookUp(float Value);
+	void Turn(float Value);
+
+	void RunAutopilot(const FVector& FlyTarget, float& OutYaw, float& OutPitch, float& OutRoll);
+};
