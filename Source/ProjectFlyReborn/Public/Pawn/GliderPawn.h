@@ -20,11 +20,16 @@ public:
 
 	virtual void Tick(float DeltaTime) override;
 
+	void AddSpeed(float Speed);
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
 private:
+	// Calculates change of speed from inclination 
+	void CalculateSpeed(float DeltaTime);
+
 	UPROPERTY(EditAnywhere)
 	class UStaticMeshComponent* MeshComponent;
 
@@ -41,16 +46,7 @@ private:
 	FVector DesiredDirection;
 
 	UPROPERTY(EditAnywhere)
-	float InitialThrustForce = 5000.0f;
-
-	UPROPERTY(EditAnywhere)
 	float ThrustForce = 5000.0f;
-
-	UPROPERTY(EditAnywhere, meta = (ClampMin = 0.0f))
-	float MinimumThrustForce = 0.0f;
-
-	UPROPERTY(EditAnywhere, meta = (ClampMin = 0.0f))
-	float MaximumThrustForce = 5000.0f;
 
 	UPROPERTY(EditAnywhere)
 	FVector TurnTorque = FVector(45.f, 25.f, 45.f);
@@ -65,16 +61,32 @@ private:
 	float AggressiveTurnAngle = 10.0f;
 
 	UPROPERTY(EditAnywhere)
-	float LiftScalar = 0.001f;
+	float LiftCoefficientPitchScalar = 0.2f;
 
 	UPROPERTY(EditAnywhere)
-	float GravityForce = 980.0f;
+	float LiftCoefficientScalar = 30.0f;
+
+	// Negative value allows plane to move backwards, thus imitating reversed gliding
+	float MinimumPlaneSpeed = -100.0f;
 
 	UPROPERTY(EditAnywhere, meta = (ClampMin = 0.0f))
+	float MaximumPlaneSpeed = 3000.0f;
+
+	UPROPERTY(EditAnywhere, meta = (ClampMin = 0.0f))
+	float StartPlaneSpeed = 3000.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Plane Control", meta = (ClampMin = 0.0f))
 	float DiveSpeedIncreaseScalar = 4.0f;
 
-	UPROPERTY(EditAnywhere, meta = (ClampMin = 0.0f))
+	UPROPERTY(EditAnywhere,Category = "Plane Control", meta = (ClampMin = 0.0f))
 	float RiseSpeedDecreaseScalar = 6.0f;
+
+	float AirControl = 0.0f;
+
+	// Forward speed of the plane
+	// This is the main variable, which defines speed of the plane 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (AllowPrivateAccess = "true"))
+	float ForwardSpeed = 0.0f;
 
 	// Mouse input handlers
 	void LookUp(float Value);

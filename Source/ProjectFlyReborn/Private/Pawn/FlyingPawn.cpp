@@ -8,7 +8,6 @@ AFlyingPawn::AFlyingPawn()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
-	// Replace Capsule with Static Mesh
 	MeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComponent"));
 	MeshComponent->SetSimulatePhysics(true);
 	MeshComponent->SetEnableGravity(false);

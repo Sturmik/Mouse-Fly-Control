@@ -53,15 +53,15 @@ void AGliderPawn::BeginPlay()
 {
 	Super::BeginPlay();
 
-	CameraYaw = 0.0f;
-	CameraPitch = 0.0f;
-
-	MeshComponent->AddForce(MeshComponent->GetForwardVector() * InitialThrustForce, NAME_None, true);
+	// Add initial speed
+	AddSpeed(StartPlaneSpeed);
 }
 
 void AGliderPawn::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	CalculateSpeed(DeltaTime);
 
 	// Clamp and apply camera rotation
 	CameraPitch = FMath::Clamp(CameraPitch, -90.f, 90.f);
@@ -72,72 +72,56 @@ void AGliderPawn::Tick(float DeltaTime)
 	const FVector FlyTarget = MeshComponent->GetComponentLocation() + Camera->GetForwardVector() * 1000.0f;
 	DesiredDirection = FlyTarget;
 
-	// Debug: current direction and target
+	// Debug lines
 	const FVector Start = MeshComponent->GetComponentLocation();
 	DrawDebugLine(GetWorld(), Start, Start + MeshComponent->GetForwardVector() * 1000.0f, FColor::Cyan, false, 0.1f, 0, 2.0f);
 	DrawDebugLine(GetWorld(), Start, FlyTarget, FColor::Red, false, 0.1f, 0, 2.0f);
 
-	// Autopilot: calculate control inputs
+	// Autopilot torque calculation
 	float YawInput, PitchInput, RollInput;
 	RunAutopilot(FlyTarget, YawInput, PitchInput, RollInput);
 
-	// Apply torque using correct Unreal axis mapping:
-	// X = Roll, Y = Pitch, Z = Yaw
+	// Apply torque
 	const FVector Torque = FVector(
 		RollInput * TurnTorque.X,
 		PitchInput * TurnTorque.Y,
 		YawInput * TurnTorque.Z
 	);
-
-	// Apply torque in local space
 	MeshComponent->AddTorqueInRadians(MeshComponent->GetComponentRotation().RotateVector(Torque), NAME_None, true);
 
-	// Compute current forward speed (airspeed)
-	const FVector Velocity = MeshComponent->GetPhysicsLinearVelocity();
-	const float ForwardSpeed = FVector::DotProduct(Velocity, MeshComponent->GetForwardVector());
+	// Lift logic
 
-	// Lift depends on square of speed and pitch angle (simplified AOA)
-	float PitchAngleRad = FMath::DegreesToRadians(MeshComponent->GetComponentRotation().Pitch);
-	float LiftCoefficient = FMath::Clamp(FMath::Cos(PitchAngleRad), 0.0f, 1.0f);
+	// Calculate pitch input (difference from last frame)
+	static float LastPitchAngle = MeshComponent->GetComponentRotation().Pitch;
+	float CurrentPitchAngle = MeshComponent->GetComponentRotation().Pitch;
+	float DeltaPitch = CurrentPitchAngle - LastPitchAngle;
+	LastPitchAngle = CurrentPitchAngle;
 
-	// Calculate lift force
-	FVector LiftDirection = MeshComponent->GetUpVector();
-	float LiftForceMagnitude = LiftCoefficient * ForwardSpeed * ForwardSpeed * LiftScalar;
+	// Calculate lift only when pulling up (positive DeltaPitch)
+	float LiftForceMag = 0.0f;
 
-	MeshComponent->AddForce(LiftDirection * LiftForceMagnitude);
-
-	// Simulate gravity (custom so we can tune it)
-	MeshComponent->AddForce(FVector(0, 0, -GravityForce));
-
-	// Auto-dive if speed too low
-	if (MeshComponent->GetComponentVelocity().Size() < 300.0f) // tune threshold
+	if (DeltaPitch > 0.0f && ForwardSpeed > 0)
 	{
-		FVector DiveTarget = GetActorLocation() + FVector(0, 0, -1);
-		float DummyYaw, DummyPitch, DummyRoll;
-		RunAutopilot(DiveTarget, DummyYaw, DummyPitch, DummyRoll);
-
-		// Add small torque to encourage nose down
-		FVector DiveTorque = FVector(
-			DummyRoll * TurnTorque.X * 0.5f,
-			DummyPitch * TurnTorque.Y * 0.5f,
-			DummyYaw * TurnTorque.Z * 0.5f
-		);
-
-		MeshComponent->AddTorqueInRadians(MeshComponent->GetComponentRotation().RotateVector(DiveTorque), NAME_None, true);
+		// Approximate lift as combination of speed and pitch rate
+		float LiftCoefficient = FMath::Clamp(DeltaPitch * LiftCoefficientPitchScalar, 0.0f, 1.0f);
+		LiftForceMag = ForwardSpeed * LiftCoefficient * LiftCoefficientScalar; 
 	}
 
-	if (MeshComponent->GetForwardVector().Z <= 0)
-	{
-		ThrustForce += -MeshComponent->GetForwardVector().Z * DiveSpeedIncreaseScalar;
-	}
-	else
-	{
-		ThrustForce += -MeshComponent->GetForwardVector().Z * RiseSpeedDecreaseScalar;
-	}
-	ThrustForce = FMath::Clamp(ThrustForce, MinimumThrustForce, MaximumThrustForce);
+	// Lift direction is always world up to avoid strafing due to roll
+	FVector LiftDirection = FVector::UpVector;
+	FVector LiftForce = LiftDirection * LiftForceMag;
 
-	// Forward thrust
-	MeshComponent->AddForce(MeshComponent->GetForwardVector() * ThrustForce, NAME_None, true);
+	// Apply lift force
+	MeshComponent->AddForce(LiftForce + (MeshComponent->GetForwardVector() * ForwardSpeed));
+
+	// Debug lift force
+	DrawDebugLine(GetWorld(), Start, Start + LiftForce * 0.01f, FColor::Green, false, 0.1f, 0, 2.0f);
+
+}
+
+void AGliderPawn::AddSpeed(float Speed)
+{
+	ForwardSpeed = FMath::Clamp(ForwardSpeed + Speed, MinimumPlaneSpeed, MaximumPlaneSpeed);
 }
 
 void AGliderPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -146,6 +130,38 @@ void AGliderPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 
 	PlayerInputComponent->BindAxis("Turn", this, &AGliderPawn::Turn);
 	PlayerInputComponent->BindAxis("LookUp", this, &AGliderPawn::LookUp);
+}
+
+void AGliderPawn::CalculateSpeed(float DeltaTime)
+{
+	// Calculation of the speed change depending on the inclination of the plane
+	if (MeshComponent->GetForwardVector().Z <= 0)
+	{
+		AddSpeed(-MeshComponent->GetForwardVector().Z * DiveSpeedIncreaseScalar);
+	}
+	else
+	{
+		AddSpeed(-MeshComponent->GetForwardVector().Z * RiseSpeedDecreaseScalar);
+	}
+
+	// Calculate bank angle (roll) in degrees
+	float BankAngle = MeshComponent->GetComponentRotation().Roll;
+
+	// Take absolute value for calculation
+	float AbsBankAngle = FMath::Abs(BankAngle);
+
+	// Calculate bank speed loss factor
+	// Example: No loss until 10°, increasing loss up to MaxTurnSpeedLossFactor at 60°
+	float MaxTurnSpeedLossFactor = 0.5f; // Lose up to 50% of speed gain when turning hard
+
+	if (AbsBankAngle > 10.0f) // Ignore small banks
+	{
+		float BankFactor = FMath::Clamp((AbsBankAngle - 10.0f) / 50.0f, 0.0f, 1.0f); // Scale from 10° to 60°
+		float SpeedLoss = ForwardSpeed * BankFactor * MaxTurnSpeedLossFactor * DeltaTime;
+
+		// Apply speed loss
+		AddSpeed(-SpeedLoss);
+	}
 }
 
 void AGliderPawn::Turn(float Value)
