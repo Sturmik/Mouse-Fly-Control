@@ -61,10 +61,16 @@ private:
 	float AggressiveTurnAngle = 10.0f;
 
 	UPROPERTY(EditAnywhere)
-	float LiftCoefficientPitchScalar = 0.2f;
+	float LiftCoefficientScalar = 0.005f; // Tune for desired lift feel
 
 	UPROPERTY(EditAnywhere)
-	float LiftCoefficientScalar = 30.0f;
+	float MaxLiftForce = 20000.0f; // Tune this for your plane mass and gameplay feel
+
+	UPROPERTY(EditAnywhere)
+	float GravityScalar = 980.0f; // cm/s² Unreal gravity
+
+	UPROPERTY(EditAnywhere)
+	float GravityMultiplier = 0.7f; 
 
 	// Negative value allows plane to move backwards, thus imitating reversed gliding
 	float MinimumPlaneSpeed = -100.0f;
@@ -82,6 +88,15 @@ private:
 	float RiseSpeedDecreaseScalar = 6.0f;
 
 	float AirControl = 0.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Plane Control", meta = (ClampMin = 0.0f))
+	float MinimumAirControl = 4.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Plane Control", meta = (ClampMin = 0.0f))
+	float MaximumAirControl = 8.0f;
+
+	// Defines speed threshold, under which plane will start to dive downwards automatically
+	const float PlaneSpeedThresholdForPitchDecline = 300.0f;
 
 	// Forward speed of the plane
 	// This is the main variable, which defines speed of the plane 

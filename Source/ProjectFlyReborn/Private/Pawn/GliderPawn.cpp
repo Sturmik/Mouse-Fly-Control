@@ -81,7 +81,7 @@ void AGliderPawn::Tick(float DeltaTime)
 	float YawInput, PitchInput, RollInput;
 	RunAutopilot(FlyTarget, YawInput, PitchInput, RollInput);
 
-	// Apply torque
+	// Apply torque (arcade feel: strong responsiveness)
 	const FVector Torque = FVector(
 		RollInput * TurnTorque.X,
 		PitchInput * TurnTorque.Y,
@@ -89,39 +89,57 @@ void AGliderPawn::Tick(float DeltaTime)
 	);
 	MeshComponent->AddTorqueInRadians(MeshComponent->GetComponentRotation().RotateVector(Torque), NAME_None, true);
 
-	// Lift logic
+	// Glider simulation
 
-	// Calculate pitch input (difference from last frame)
-	static float LastPitchAngle = MeshComponent->GetComponentRotation().Pitch;
-	float CurrentPitchAngle = MeshComponent->GetComponentRotation().Pitch;
-	float DeltaPitch = CurrentPitchAngle - LastPitchAngle;
-	LastPitchAngle = CurrentPitchAngle;
+	float Speed = MeshComponent->GetComponentVelocity().Size();
+	float AoA = MeshComponent->GetForwardVector().Z;
 
-	// Calculate lift only when pulling up (positive DeltaPitch)
-	float LiftForceMag = 0.0f;
+	float LiftSpeedThreshold = 300.0f;
+	float SpeedFactor = FMath::Clamp((Speed - LiftSpeedThreshold) / LiftSpeedThreshold, 0.0f, 1.0f);
 
-	if (DeltaPitch > 0.0f && ForwardSpeed > 0)
+	float StallAngle = 0.5f;
+	float LiftCoefficient;
+
+	if (AoA > StallAngle)
 	{
-		// Approximate lift as combination of speed and pitch rate
-		float LiftCoefficient = FMath::Clamp(DeltaPitch * LiftCoefficientPitchScalar, 0.0f, 1.0f);
-		LiftForceMag = ForwardSpeed * LiftCoefficient * LiftCoefficientScalar; 
+		LiftCoefficient = FMath::Clamp(1.0f - (AoA - StallAngle) * 5.0f, 0.0f, 1.0f);
+	}
+	else
+	{
+		LiftCoefficient = FMath::Clamp(AoA, 0.0f, 1.0f);
 	}
 
-	// Lift direction is always world up to avoid strafing due to roll
-	FVector LiftDirection = FVector::UpVector;
-	FVector LiftForce = LiftDirection * LiftForceMag;
+	LiftCoefficient *= SpeedFactor;
 
-	// Apply lift force
-	MeshComponent->AddForce(LiftForce + (MeshComponent->GetForwardVector() * ForwardSpeed));
+	float LiftForceMag = Speed * Speed * LiftCoefficient * LiftCoefficientScalar;
+	LiftForceMag = FMath::Min(LiftForceMag, MaxLiftForce);
+	FVector LiftForce = FVector::UpVector * LiftForceMag;
 
-	// Debug lift force
+	// Full gravity for snappy fall
+	FVector GravityForce = FVector::DownVector * GravityScalar;
+
+	// Quadratic drag force
+	float DragCoefficient = 0.002f;
+	FVector Velocity = MeshComponent->GetComponentVelocity();
+	FVector DragForce = -Velocity.GetSafeNormal() * Velocity.SizeSquared() * DragCoefficient;
+
+	FVector TotalForce = LiftForce + GravityForce + DragForce + (MeshComponent->GetForwardVector() * ForwardSpeed);
+	MeshComponent->AddForce(TotalForce);
+
+	// Debug lift and turbulence
 	DrawDebugLine(GetWorld(), Start, Start + LiftForce * 0.01f, FColor::Green, false, 0.1f, 0, 2.0f);
-
 }
 
 void AGliderPawn::AddSpeed(float Speed)
 {
 	ForwardSpeed = FMath::Clamp(ForwardSpeed + Speed, MinimumPlaneSpeed, MaximumPlaneSpeed);
+
+	// The less speed we have the less control user has over it's plane
+	AirControl = FMath::GetMappedRangeValueClamped(
+		FVector2D(PlaneSpeedThresholdForPitchDecline, MaximumPlaneSpeed),
+		FVector2D(MinimumAirControl, MaximumAirControl),
+		ForwardSpeed
+	);
 }
 
 void AGliderPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -135,7 +153,7 @@ void AGliderPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 void AGliderPawn::CalculateSpeed(float DeltaTime)
 {
 	// Calculation of the speed change depending on the inclination of the plane
-	if (MeshComponent->GetForwardVector().Z <= 0)
+	if (MeshComponent->GetForwardVector().Z < 0)
 	{
 		AddSpeed(-MeshComponent->GetForwardVector().Z * DiveSpeedIncreaseScalar);
 	}
@@ -144,24 +162,24 @@ void AGliderPawn::CalculateSpeed(float DeltaTime)
 		AddSpeed(-MeshComponent->GetForwardVector().Z * RiseSpeedDecreaseScalar);
 	}
 
-	// Calculate bank angle (roll) in degrees
-	float BankAngle = MeshComponent->GetComponentRotation().Roll;
+	//// Calculate bank angle (roll) in degrees
+	//float BankAngle = MeshComponent->GetComponentRotation().Roll;
 
-	// Take absolute value for calculation
-	float AbsBankAngle = FMath::Abs(BankAngle);
+	//// Take absolute value for calculation
+	//float AbsBankAngle = FMath::Abs(BankAngle);
 
-	// Calculate bank speed loss factor
-	// Example: No loss until 10°, increasing loss up to MaxTurnSpeedLossFactor at 60°
-	float MaxTurnSpeedLossFactor = 0.5f; // Lose up to 50% of speed gain when turning hard
+	//// Calculate bank speed loss factor
+	//// Example: No loss until 10°, increasing loss up to MaxTurnSpeedLossFactor at 60°
+	//float MaxTurnSpeedLossFactor = 0.5f; // Lose up to 50% of speed gain when turning hard
 
-	if (AbsBankAngle > 10.0f) // Ignore small banks
-	{
-		float BankFactor = FMath::Clamp((AbsBankAngle - 10.0f) / 50.0f, 0.0f, 1.0f); // Scale from 10° to 60°
-		float SpeedLoss = ForwardSpeed * BankFactor * MaxTurnSpeedLossFactor * DeltaTime;
+	//if (AbsBankAngle > 10.0f) // Ignore small banks
+	//{
+	//	float BankFactor = FMath::Clamp((AbsBankAngle - 10.0f) / 50.0f, 0.0f, 1.0f); // Scale from 10° to 60°
+	//	float SpeedLoss = ForwardSpeed * BankFactor * MaxTurnSpeedLossFactor * DeltaTime;
 
-		// Apply speed loss
-		AddSpeed(-SpeedLoss);
-	}
+	//	// Apply speed loss
+	//	AddSpeed(-SpeedLoss);
+	//}
 }
 
 void AGliderPawn::Turn(float Value)
@@ -180,12 +198,10 @@ void AGliderPawn::RunAutopilot(const FVector& FlyTarget, float& OutYaw, float& O
 	FVector LocalFlyTarget = ActorTransform.InverseTransformPosition(FlyTarget).GetSafeNormal() * TurnAngleSensitivity;
 
 	// Pitch (Z), Yaw (Y), Roll (X)
+	// Base autopilot control signals (full responsiveness)
+	float BasePitch = -FMath::Clamp(LocalFlyTarget.Z, -1.0f, 1.0f);
+	float BaseYaw = FMath::Clamp(LocalFlyTarget.Y, -1.0f, 1.0f);
 
-	// Pitch and Yaw
-	OutPitch = -FMath::Clamp(LocalFlyTarget.Z, -1.0f, 1.0f);
-	OutYaw = FMath::Clamp(LocalFlyTarget.Y, -1.0f, 1.0f);
-
-	// Roll
 	float AggressiveRoll = FMath::Clamp(LocalFlyTarget.Y, -1.0f, 1.0f);
 	float WingsLevelRoll = GetActorRightVector().Z;
 
@@ -193,5 +209,18 @@ void AGliderPawn::RunAutopilot(const FVector& FlyTarget, float& OutYaw, float& O
 	float AngleOffTarget = FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct(GetActorForwardVector(), ToTarget)));
 
 	float BlendFactor = FMath::Clamp(AngleOffTarget / AggressiveTurnAngle, 0.0f, 1.0f);
-	OutRoll = -FMath::Lerp(WingsLevelRoll, AggressiveRoll, BlendFactor);
+	float BaseRoll = -FMath::Lerp(WingsLevelRoll, AggressiveRoll, BlendFactor);
+
+	// Calculate responsiveness factor [0..1] based on ForwardSpeed
+	// Normalize AirControl between MinimumAirControl and MaximumAirControl to [0..1]
+	float Responsiveness = FMath::GetMappedRangeValueClamped(
+		FVector2D(MinimumAirControl, MaximumAirControl),
+		FVector2D(0.1f, 1.0f),
+		AirControl
+	);
+
+	// Apply responsiveness factor to autopilot outputs
+	OutPitch = BasePitch * Responsiveness;
+	OutYaw = BaseYaw * Responsiveness;
+	OutRoll = BaseRoll * Responsiveness;
 }
