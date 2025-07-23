@@ -128,6 +128,67 @@ void AGliderPawn::Tick(float DeltaTime)
 
 	// Debug lift and turbulence
 	DrawDebugLine(GetWorld(), Start, Start + LiftForce * 0.01f, FColor::Green, false, 0.1f, 0, 2.0f);
+
+	// Dramatic gravity addition
+
+	const float CriticalPitchAngle = 75.0f;
+	float InclinationDegrees = FMath::RadiansToDegrees(FMath::Asin(MeshComponent->GetForwardVector().Z));
+
+	float DramaticGravityMultiplier = 1.0f;
+	bool bCriticalCondition = false;
+
+	// Smoothly calculate stall gravity multiplier based on low speed (0 to 3)
+	if (ForwardSpeed < MinimumPlaneSpeed * 2.0f)
+	{
+		bCriticalCondition = true;
+		float StallFactor = FMath::GetMappedRangeValueClamped(
+			FVector2D(MinimumPlaneSpeed * 2.0f, MinimumPlaneSpeed * 0.5f),
+			FVector2D(1.0f, 3.0f),
+			ForwardSpeed
+		);
+		DramaticGravityMultiplier = StallFactor;
+	}
+
+	// Diving or rising more than critical pitch
+	if (FMath::Abs(InclinationDegrees) > CriticalPitchAngle)
+	{
+		bCriticalCondition = true;
+
+		if (InclinationDegrees < -CriticalPitchAngle)
+		{
+			// Diving: smoothly increase multiplier up to x5
+			float DiveMultiplier = FMath::GetMappedRangeValueClamped(
+				FVector2D(-CriticalPitchAngle, -90.f),
+				FVector2D(1.0f, 5.0f),
+				InclinationDegrees
+			);
+			DramaticGravityMultiplier = FMath::Max(DramaticGravityMultiplier, DiveMultiplier);
+		}
+		else
+		{
+			// Rising steeply: smoothly increase multiplier up to x4
+			float RiseMultiplier = FMath::GetMappedRangeValueClamped(
+				FVector2D(CriticalPitchAngle, 90.f),
+				FVector2D(1.0f, 4.0f),
+				InclinationDegrees
+			);
+			DramaticGravityMultiplier = FMath::Max(DramaticGravityMultiplier, RiseMultiplier);
+		}
+	}
+
+	// Apply dramatic gravity force if any condition met
+	if (bCriticalCondition)
+	{
+		// Smoothly interpolate to avoid abrupt force application
+		static float SmoothedGravityMultiplier = 1.0f;
+		SmoothedGravityMultiplier = FMath::FInterpTo(SmoothedGravityMultiplier, DramaticGravityMultiplier, DeltaTime, 3.0f);
+
+		FVector DramaticGravityForce = FVector::DownVector * GravityScalar * SmoothedGravityMultiplier;
+		MeshComponent->AddForce(DramaticGravityForce);
+
+		// Optional debug
+		DrawDebugLine(GetWorld(), Start, Start + DramaticGravityForce * 0.01f, FColor::Purple, false, 0.1f, 0, 2.0f);
+	}
 }
 
 void AGliderPawn::AddSpeed(float Speed)
@@ -136,7 +197,7 @@ void AGliderPawn::AddSpeed(float Speed)
 
 	// The less speed we have the less control user has over it's plane
 	AirControl = FMath::GetMappedRangeValueClamped(
-		FVector2D(PlaneSpeedThresholdForPitchDecline, MaximumPlaneSpeed),
+		FVector2D(MinimumPlaneSpeed, MaximumPlaneSpeed),
 		FVector2D(MinimumAirControl, MaximumAirControl),
 		ForwardSpeed
 	);
@@ -152,34 +213,24 @@ void AGliderPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 
 void AGliderPawn::CalculateSpeed(float DeltaTime)
 {
-	// Calculation of the speed change depending on the inclination of the plane
-	if (MeshComponent->GetForwardVector().Z < 0)
+	// Calculate plane inclination
+	float Inclination = MeshComponent->GetForwardVector().Z;
+
+	if (Inclination < 0)
 	{
-		AddSpeed(-MeshComponent->GetForwardVector().Z * DiveSpeedIncreaseScalar);
+		// Drastic dive speed increase: use squared or cubed for non-linear growth
+		float DiveFactor = -Inclination; // Convert to positive
+
+		// Example: cube the factor for strong acceleration at steep dives
+		float DiveAcceleration = FMath::Pow(DiveFactor, 3) * DiveSpeedIncreaseScalar;
+
+		AddSpeed(DiveAcceleration * DeltaTime);
 	}
 	else
 	{
-		AddSpeed(-MeshComponent->GetForwardVector().Z * RiseSpeedDecreaseScalar);
+		// Normal rise speed decrease remains linear
+		AddSpeed(-Inclination * RiseSpeedDecreaseScalar * DeltaTime);
 	}
-
-	//// Calculate bank angle (roll) in degrees
-	//float BankAngle = MeshComponent->GetComponentRotation().Roll;
-
-	//// Take absolute value for calculation
-	//float AbsBankAngle = FMath::Abs(BankAngle);
-
-	//// Calculate bank speed loss factor
-	//// Example: No loss until 10°, increasing loss up to MaxTurnSpeedLossFactor at 60°
-	//float MaxTurnSpeedLossFactor = 0.5f; // Lose up to 50% of speed gain when turning hard
-
-	//if (AbsBankAngle > 10.0f) // Ignore small banks
-	//{
-	//	float BankFactor = FMath::Clamp((AbsBankAngle - 10.0f) / 50.0f, 0.0f, 1.0f); // Scale from 10° to 60°
-	//	float SpeedLoss = ForwardSpeed * BankFactor * MaxTurnSpeedLossFactor * DeltaTime;
-
-	//	// Apply speed loss
-	//	AddSpeed(-SpeedLoss);
-	//}
 }
 
 void AGliderPawn::Turn(float Value)
@@ -219,7 +270,7 @@ void AGliderPawn::RunAutopilot(const FVector& FlyTarget, float& OutYaw, float& O
 		AirControl
 	);
 
-	// Apply responsiveness factor to autopilot outputs
+	// Normal autopilot control with responsiveness scaling
 	OutPitch = BasePitch * Responsiveness;
 	OutYaw = BaseYaw * Responsiveness;
 	OutRoll = BaseRoll * Responsiveness;

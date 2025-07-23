@@ -90,13 +90,10 @@ private:
 	float AirControl = 0.0f;
 
 	UPROPERTY(EditAnywhere, Category = "Plane Control", meta = (ClampMin = 0.0f))
-	float MinimumAirControl = 4.0f;
+	float MinimumAirControl = 1.0f;
 
 	UPROPERTY(EditAnywhere, Category = "Plane Control", meta = (ClampMin = 0.0f))
 	float MaximumAirControl = 8.0f;
-
-	// Defines speed threshold, under which plane will start to dive downwards automatically
-	const float PlaneSpeedThresholdForPitchDecline = 300.0f;
 
 	// Forward speed of the plane
 	// This is the main variable, which defines speed of the plane 
