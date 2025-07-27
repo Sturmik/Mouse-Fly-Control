@@ -20,7 +20,7 @@ public:
 
 	virtual void Tick(float DeltaTime) override;
 
-	void AddSpeed(float Speed);
+	void AffectSpeed(float Speed);
 
 protected:
 	virtual void BeginPlay() override;
@@ -45,60 +45,101 @@ private:
 
 	FVector DesiredDirection;
 
-	UPROPERTY(EditAnywhere)
-	float ThrustForce = 5000.0f;
-
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, Category = "Glider Control - Turn Control", meta = (ClampMin = 0.0f))
 	FVector TurnTorque = FVector(45.f, 25.f, 45.f);
 
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, Category = "Glider Control - Turn Control", meta = (ClampMin = 0.0f))
 	float MouseSensitivity = 1.0f;
 
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, Category = "Glider Control - Turn Control", meta = (ClampMin = 0.0f))
 	float TurnAngleSensitivity = 1.0f;
 
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, Category = "Glider Control - Turn Control", meta = (ClampMin = 0.0f))
 	float AggressiveTurnAngle = 10.0f;
 
-	UPROPERTY(EditAnywhere)
-	float LiftCoefficientScalar = 0.005f; // Tune for desired lift feel
+	UPROPERTY(EditAnywhere, Category = "Glider Control - Lift Control", meta = (ClampMin = 0.0f))
+	float LiftCoefficientScalar = 0.004f;
 
-	UPROPERTY(EditAnywhere)
-	float MaxLiftForce = 20000.0f; // Tune this for your plane mass and gameplay feel
+	UPROPERTY(EditAnywhere, Category = "Glider Control - Lift Control", meta = (ClampMin = 0.0f))
+	float MaxLiftForce = 20000.0f;
 
-	UPROPERTY(EditAnywhere)
-	float GravityScalar = 980.0f; // cm/s² Unreal gravity
+	UPROPERTY(EditAnywhere, Category = "Glider Control - Speed Control", meta = (ClampMin = 0.0f))
+	float MinimumPlaneSpeed = 3000.0f;
 
-	UPROPERTY(EditAnywhere)
-	float GravityMultiplier = 0.7f; 
+	UPROPERTY(EditAnywhere, Category = "Glider Control - Speed Control", meta = (ClampMin = 0.0f))
+	float MaximumPlaneSpeed = 20000.0f;
 
-	// Negative value allows plane to move backwards, thus imitating reversed gliding
-	float MinimumPlaneSpeed = -100.0f;
+	UPROPERTY(EditAnywhere, Category = "Glider Control - Speed Control", meta = (ClampMin = 0.0f))
+	float StartPlaneSpeed = 12000.0f;
 
-	UPROPERTY(EditAnywhere, meta = (ClampMin = 0.0f))
-	float MaximumPlaneSpeed = 3000.0f;
+	UPROPERTY(EditAnywhere, Category = "Glider Control - Speed Control", meta = (ClampMin = 0.0f))
+	float DiveSpeedIncreaseScalar = 1000.0f;
 
-	UPROPERTY(EditAnywhere, meta = (ClampMin = 0.0f))
-	float StartPlaneSpeed = 3000.0f;
-
-	UPROPERTY(EditAnywhere, Category = "Plane Control", meta = (ClampMin = 0.0f))
-	float DiveSpeedIncreaseScalar = 4.0f;
-
-	UPROPERTY(EditAnywhere,Category = "Plane Control", meta = (ClampMin = 0.0f))
-	float RiseSpeedDecreaseScalar = 6.0f;
+	UPROPERTY(EditAnywhere, Category = "Glider Control - Speed Control", meta = (ClampMin = 0.0f))
+	float RiseSpeedDecreaseScalar = 2500.0f;
 
 	float AirControl = 0.0f;
 
-	UPROPERTY(EditAnywhere, Category = "Plane Control", meta = (ClampMin = 0.0f))
+	UPROPERTY(EditAnywhere, Category = "Glider Control - Air Control", meta = (ClampMin = 0.0f))
 	float MinimumAirControl = 1.0f;
 
-	UPROPERTY(EditAnywhere, Category = "Plane Control", meta = (ClampMin = 0.0f))
+	UPROPERTY(EditAnywhere, Category = "Glider Control - Air Control", meta = (ClampMin = 0.0f))
 	float MaximumAirControl = 8.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Glider Control - Gravity Control", meta = (ClampMin = 0.0f))
+	float GravityScalar = 2500.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Glider Control - Gravity Control", meta = (ClampMin = 0.0f))
+	float GravityMultiplier = 1.0f; 
 
 	// Forward speed of the plane
 	// This is the main variable, which defines speed of the plane 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (AllowPrivateAccess = "true"))
 	float ForwardSpeed = 0.0f;
+
+	// Dash Settings
+	FTimerHandle DashStopTimer;
+	FTimerHandle DashCooldownTimer;
+
+	bool bCanDash = true;
+
+	UPROPERTY(EditAnywhere, Category = "Glider Control - Dash")
+	float DashSpeedCost = 500.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Glider Control - Dash")
+	float DashStrength = 200000.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Glider Control - Dash")
+	float DashCooldown = 3.0f;
+
+	// Halt Settings
+	FTimerHandle HaltTimer;
+
+	UPROPERTY(EditAnywhere, Category = "Glider Control - Halt")
+	float HaltSpeedCost = 500.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Glider Control - Halt")
+	float HaltDuration = 0.5f;
+
+	UPROPERTY(EditAnywhere, Category = "Glider Control - Halt")
+	float HaltCooldown = 3.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Glider Control - Halt")
+	float HaltSpeedLinearDamping = 2.0f;
+
+	float LinearDampingBeforeHaltBackup = 0.0f;
+
+	bool bCanHalt = true;
+	bool bIsHalting = false;
+
+	// Dash
+	void StartDash();
+	void ResetDashCooldown();
+
+	// Halt
+	void StartHalt();
+	void StopHalt();
+	void ResetHaltCooldown();
 
 	// Mouse input handlers
 	void LookUp(float Value);

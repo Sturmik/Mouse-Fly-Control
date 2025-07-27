@@ -54,7 +54,7 @@ void AGliderPawn::BeginPlay()
 	Super::BeginPlay();
 
 	// Add initial speed
-	AddSpeed(StartPlaneSpeed);
+	AffectSpeed(StartPlaneSpeed);
 }
 
 void AGliderPawn::Tick(float DeltaTime)
@@ -124,7 +124,11 @@ void AGliderPawn::Tick(float DeltaTime)
 	FVector DragForce = -Velocity.GetSafeNormal() * Velocity.SizeSquared() * DragCoefficient;
 
 	FVector TotalForce = LiftForce + GravityForce + DragForce + (MeshComponent->GetForwardVector() * ForwardSpeed);
-	MeshComponent->AddForce(TotalForce);
+
+	if (!bIsHalting)
+	{
+		MeshComponent->AddForce(TotalForce);
+	}
 
 	// Debug lift and turbulence
 	DrawDebugLine(GetWorld(), Start, Start + LiftForce * 0.01f, FColor::Green, false, 0.1f, 0, 2.0f);
@@ -136,18 +140,6 @@ void AGliderPawn::Tick(float DeltaTime)
 
 	float DramaticGravityMultiplier = 1.0f;
 	bool bCriticalCondition = false;
-
-	// Smoothly calculate stall gravity multiplier based on low speed (0 to 3)
-	if (ForwardSpeed < MinimumPlaneSpeed * 2.0f)
-	{
-		bCriticalCondition = true;
-		float StallFactor = FMath::GetMappedRangeValueClamped(
-			FVector2D(MinimumPlaneSpeed * 2.0f, MinimumPlaneSpeed * 0.5f),
-			FVector2D(1.0f, 3.0f),
-			ForwardSpeed
-		);
-		DramaticGravityMultiplier = StallFactor;
-	}
 
 	// Diving or rising more than critical pitch
 	if (FMath::Abs(InclinationDegrees) > CriticalPitchAngle)
@@ -191,7 +183,7 @@ void AGliderPawn::Tick(float DeltaTime)
 	}
 }
 
-void AGliderPawn::AddSpeed(float Speed)
+void AGliderPawn::AffectSpeed(float Speed)
 {
 	ForwardSpeed = FMath::Clamp(ForwardSpeed + Speed, MinimumPlaneSpeed, MaximumPlaneSpeed);
 
@@ -209,6 +201,9 @@ void AGliderPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 
 	PlayerInputComponent->BindAxis("Turn", this, &AGliderPawn::Turn);
 	PlayerInputComponent->BindAxis("LookUp", this, &AGliderPawn::LookUp);
+
+	PlayerInputComponent->BindAction("Dash", IE_Pressed, this, &AGliderPawn::StartDash);
+	PlayerInputComponent->BindAction("Halt", IE_Pressed, this, &AGliderPawn::StartHalt);
 }
 
 void AGliderPawn::CalculateSpeed(float DeltaTime)
@@ -224,18 +219,85 @@ void AGliderPawn::CalculateSpeed(float DeltaTime)
 		// Example: cube the factor for strong acceleration at steep dives
 		float DiveAcceleration = FMath::Pow(DiveFactor, 3) * DiveSpeedIncreaseScalar;
 
-		AddSpeed(DiveAcceleration * DeltaTime);
+		AffectSpeed(DiveAcceleration * DeltaTime);
 	}
 	else
 	{
 		// Normal rise speed decrease remains linear
-		AddSpeed(-Inclination * RiseSpeedDecreaseScalar * DeltaTime);
+		AffectSpeed(-Inclination * RiseSpeedDecreaseScalar * DeltaTime);
 	}
 }
 
 void AGliderPawn::Turn(float Value)
 {
 	CameraYaw += Value * MouseSensitivity;
+}
+
+void AGliderPawn::StartDash()
+{
+	if (ForwardSpeed < MinimumPlaneSpeed + DashSpeedCost)
+	{
+		return;
+	}
+
+	if (bCanDash)
+	{
+		bCanDash = false;
+
+		// Add impulse, which will imitate dash
+		MeshComponent->AddForce(MeshComponent->GetForwardVector() * DashStrength, NAME_None, true);
+
+		// Dash will cost plane forward speed
+		AffectSpeed(-DashSpeedCost);
+
+		// Start cooldown
+		GetWorld()->GetTimerManager().SetTimer(DashCooldownTimer, this, &AGliderPawn::ResetDashCooldown, DashCooldown, false);
+	}
+}
+
+void AGliderPawn::ResetDashCooldown()
+{
+	bCanDash = true;
+}
+
+void AGliderPawn::StartHalt()
+{
+	if (ForwardSpeed < MinimumPlaneSpeed + HaltSpeedCost)
+	{
+		return;
+	}
+
+	if (bCanHalt)
+	{
+		bCanHalt = false;
+		bIsHalting = true;
+
+		// Halt will cost plane forward speed
+		AffectSpeed(-HaltSpeedCost);
+
+		// Save linear damping and velocity before halt
+		LinearDampingBeforeHaltBackup = MeshComponent->GetLinearDamping();
+
+		// Change linear damping to the one, which will be used in halt period
+		MeshComponent->SetLinearDamping(HaltSpeedLinearDamping);
+
+		GetWorld()->GetTimerManager().SetTimer(HaltTimer, this, &AGliderPawn::StopHalt, HaltDuration, false);
+	}
+}
+
+void AGliderPawn::StopHalt()
+{
+	bIsHalting = false;
+
+	MeshComponent->SetLinearDamping(LinearDampingBeforeHaltBackup);
+
+	// Start cooldown
+	GetWorld()->GetTimerManager().SetTimer(HaltTimer, this, &AGliderPawn::ResetHaltCooldown, HaltCooldown, false);
+}
+
+void AGliderPawn::ResetHaltCooldown()
+{
+	bCanHalt = true;
 }
 
 void AGliderPawn::LookUp(float Value)
